@@ -11,7 +11,7 @@ router = APIRouter()
 
 
 @router.post(
-    '/report', response_model=str, dependencies=[Depends(current_superuser)]
+    '/', response_model=str, dependencies=[Depends(current_superuser)]
 )
 async def create_report(
     session: AsyncSession = Depends(get_async_session),
