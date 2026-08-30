@@ -1,6 +1,5 @@
 import io
 from datetime import datetime, timedelta
-from typing import List
 
 import xlsxwriter
 
@@ -28,7 +27,7 @@ def format_time_delta(delta: timedelta) -> str:
 
 
 async def create_simple_report(
-    projects: List[CharityProject],
+    projects: CharityProject,
     yandex_client: YandexDiskClient,
 ) -> str:
     """Создает Excel-отчёт с проектами и возвращает публичную ссылку."""
