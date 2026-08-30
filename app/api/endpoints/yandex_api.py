@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base_storage import BaseStorageClient
 from app.core.db import get_async_session
-from app.core.dependencies import get_storage_client
+from app.core.dependencies import get_report_service
 from app.core.user import current_superuser
 from app.crud.charity_project import charity_project_crud
-from app.services.yandex_api import create_simple_report
+from app.services.yandex_api import ReportService
 
 router = APIRouter()
 
@@ -16,10 +15,11 @@ router = APIRouter()
 )
 async def create_report(
     session: AsyncSession = Depends(get_async_session),
-    storage_client: BaseStorageClient = Depends(get_storage_client),
+    report_service: ReportService = Depends(get_report_service),
 ):
     """
     Создает Excel-отчёт о закрытых проектах и загружает его на Яндекс Диск.
+
     Возвращает публичную ссылку на файл.
     Доступно только суперпользователям.
     """
@@ -32,7 +32,7 @@ async def create_report(
             detail='Нет закрытых проектов для формирования отчёта.',
         )
     try:
-        return await create_simple_report(projects, storage_client)
+        return await report_service.create_and_upload_report(projects)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
