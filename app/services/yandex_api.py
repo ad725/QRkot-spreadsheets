@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 import xlsxwriter
 
+from app.core.base_storage import BaseStorageClient
 from app.core.config import settings
 from app.core.constants import (
     CELL_FORMAT,
@@ -12,7 +13,6 @@ from app.core.constants import (
     TITLE_FORMAT,
     TOTAL_FORMAT,
 )
-from app.core.yandex_client import YandexDiskClient
 from app.models.charity_project import CharityProject
 
 
@@ -27,14 +27,12 @@ def format_time_delta(delta: timedelta) -> str:
 
 
 async def create_simple_report(
-    projects: CharityProject,
-    yandex_client: YandexDiskClient,
+    projects: list[CharityProject],
+    storage_client: BaseStorageClient,
 ) -> str:
     """Создает Excel-отчёт с проектами и возвращает публичную ссылку."""
     now_date_time = datetime.now().strftime(settings.report_format)
     file_name = f'report_{now_date_time}'
-
-    upload_url, file_path = await yandex_client.create_excel_file(file_name)
 
     output = io.BytesIO()
     workbook = xlsxwriter.Workbook(output)
@@ -67,5 +65,7 @@ async def create_simple_report(
     worksheet.set_column('C:C', 50)
     workbook.close()
     output.seek(0)
-    await yandex_client.upload_file(upload_url, output.getvalue())
-    return await yandex_client.publish_file(file_path)
+
+    upload_url, file_path = await storage_client.create_excel_file(file_name)
+    await storage_client.upload_file(upload_url, output.getvalue())
+    return await storage_client.publish_file(file_path)

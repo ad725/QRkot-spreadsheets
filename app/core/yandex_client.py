@@ -1,6 +1,7 @@
 import httpx
 from fastapi import HTTPException, status
 
+from app.core.base_storage import BaseStorageClient
 from app.core.config import settings
 from app.core.constants import (
     BASE_URL_YANDEX_DISK,
@@ -12,7 +13,7 @@ from app.core.constants import (
 )
 
 
-class YandexDiskClient:
+class YandexDiskClient(BaseStorageClient):
     """Универсальный клиент для API Яндекс Диска."""
 
     def __init__(self, token: str):
@@ -29,6 +30,18 @@ class YandexDiskClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self._client:
             await self._client.aclose()
+
+    async def _create_folder(self, folder: str):
+        """Создаёт папку, если её нет."""
+        try:
+            await self._client.put(
+                RESOURCES_URL_YANDEX_DISK,
+                headers=self.headers,
+                params={'path': f'disk:/{folder}'},
+            )
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code != status.HTTP_409_CONFLICT:
+                raise
 
     async def create_excel_file(
         self, title: str, folder: str = FOLDER_NAME_YANDEX_DISK
@@ -84,18 +97,6 @@ class YandexDiskClient:
                 detail='Ссылка не была получена со стороны Яндекс Диска.',
             )
         return public_url
-
-    async def _create_folder(self, folder: str):
-        """Создаёт папку, если её нет."""
-        try:
-            await self._client.put(
-                RESOURCES_URL_YANDEX_DISK,
-                headers=self.headers,
-                params={'path': f'disk:/{folder}'},
-            )
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code != status.HTTP_409_CONFLICT:
-                raise
 
 
 async def get_yandex_client():
