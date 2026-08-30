@@ -8,6 +8,7 @@ from app.core.constants import (
     PUBLISH_URL_YANDEX_DISK,
     RESOURCES_URL_YANDEX_DISK,
     UPLOAD_URL_YANDEX_DISK,
+    YANDEX_DISK_TIMEOUT,
 )
 
 
@@ -17,11 +18,12 @@ class YandexDiskClient:
     def __init__(self, token: str):
         self.token = token
         self.base_url = BASE_URL_YANDEX_DISK
+        self.timeout = YANDEX_DISK_TIMEOUT
         self.headers = {'Authorization': f'OAuth {token}'}
         self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self):
-        self._client = httpx.AsyncClient(timeout=30.0)
+        self._client = httpx.AsyncClient(timeout=self.timeout)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -92,7 +94,7 @@ class YandexDiskClient:
                 params={'path': f'disk:/{folder}'},
             )
         except httpx.HTTPStatusError as e:
-            if e.response.status_code != 409:
+            if e.response.status_code != status.HTTP_409_CONFLICT:
                 raise
 
 
