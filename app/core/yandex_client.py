@@ -4,23 +4,24 @@ from fastapi import HTTPException, status
 from app.core.base_storage import BaseStorageClient
 from app.core.config import settings
 from app.core.constants import (
-    BASE_URL_YANDEX_DISK,
+    CONTENT_TYPE_EXCEL,
     FOLDER_NAME_YANDEX_DISK,
     PUBLISH_URL_YANDEX_DISK,
     RESOURCES_URL_YANDEX_DISK,
     UPLOAD_URL_YANDEX_DISK,
     YANDEX_DISK_TIMEOUT,
 )
+from app.core.exceptions import StorageAPIError, StorageError
 
 
 class YandexDiskClient(BaseStorageClient):
     """Универсальный клиент для API Яндекс Диска."""
 
     def __init__(self, token: str):
-        self.token = token
-        self.base_url = BASE_URL_YANDEX_DISK
-        self.timeout = YANDEX_DISK_TIMEOUT
         self.headers = {'Authorization': f'OAuth {token}'}
+        self.timeout = YANDEX_DISK_TIMEOUT
+        self.folder = FOLDER_NAME_YANDEX_DISK
+        self.file_path = ''
         self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self):
@@ -31,70 +32,73 @@ class YandexDiskClient(BaseStorageClient):
         if self._client:
             await self._client.aclose()
 
-    async def _create_folder(self, folder: str):
+    async def _send_request(
+        self, method: str, url: str, headers: dict | None = None, **kwargs
+    ) -> httpx.Response:
+        """Внутренний метод для отправки запросов."""
+        req_headers = {**self.headers, **(headers or {})}
+        try:
+            response = await self._client.request(
+                method, url, headers=req_headers, **kwargs
+            )
+            response.raise_for_status()
+            return response
+        except httpx.HTTPStatusError as e:
+            raise StorageAPIError(
+                e.response.text, e.response.status_code
+            ) from e
+        except httpx.RequestError as e:
+            raise StorageError(
+                f'Ошибка сети при запросе к Яндекс Диску: {e}'
+            ) from e
+
+    async def _create_folder(self):
         """Создаёт папку, если её нет."""
         try:
-            await self._client.put(
+            await self._send_request(
+                'PUT',
                 RESOURCES_URL_YANDEX_DISK,
-                headers=self.headers,
-                params={'path': f'disk:/{folder}'},
+                params={'path': f'disk:/{self.folder}'},
             )
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code != status.HTTP_409_CONFLICT:
+        except StorageAPIError as e:
+            if e.status_code != status.HTTP_409_CONFLICT:
                 raise
 
-    async def create_excel_file(
-        self, title: str, folder: str = FOLDER_NAME_YANDEX_DISK
-    ) -> tuple[str, str]:
-        """
-        Создаёт Excel-файл и возвращает ссылку для загрузки и путь к файлу.
-        """
-        await self._create_folder(folder)
-        file_path = f'disk:/{folder}/{title}.xlsx'
-        response = await self._client.get(
+    async def create_excel_file(self, title: str) -> str:
+        """Создаёт файл и возвращает ссылку для загрузки."""
+        await self._create_folder()
+        self.file_path = f'disk:/{self.folder}/{title}'
+        response = await self._send_request(
+            'GET',
             UPLOAD_URL_YANDEX_DISK,
-            headers=self.headers,
-            params={'path': file_path, 'overwrite': 'true'},
+            params={'path': self.file_path, 'overwrite': 'true'},
         )
-        response.raise_for_status()
-        data = response.json()
-        upload_url = data.get('href')
-        if not upload_url:
-            raise ValueError('Не удалось получить ссылку для загрузки.')
-        return upload_url, file_path
+        if not (upload_url := response.json().get('href')):
+            raise ValueError(
+                'Не удалось получить ссылку для загрузки из ответа API.'
+            )
+        return upload_url
 
     async def upload_file(self, upload_url: str, content: bytes):
-        """Загружает файл по полученной ссылке."""
-        response = await self._client.put(
+        """Загружает контент файла по полученной ссылке."""
+        await self._send_request(
+            'PUT',
             upload_url,
             content=content,
-            headers={
-                'Content-Type': 'application/vnd.openxmlformats-'
-                'officedocument.spreadsheetml.sheet'
-            },
+            headers={'Content-Type': CONTENT_TYPE_EXCEL},
         )
-        response.raise_for_status()
 
-    async def publish_file(self, file_path: str) -> str:
+    async def publish_file(self) -> str:
         """Делает файл публичным и возвращает ссылку."""
-        response = await self._client.put(
-            PUBLISH_URL_YANDEX_DISK,
-            headers=self.headers,
-            params={'path': file_path},
+        await self._send_request(
+            'PUT', PUBLISH_URL_YANDEX_DISK, params={'path': self.file_path}
         )
-        response.raise_for_status()
-        response = await self._client.get(
-            RESOURCES_URL_YANDEX_DISK,
-            headers=self.headers,
-            params={'path': file_path},
+        response = await self._send_request(
+            'GET', RESOURCES_URL_YANDEX_DISK, params={'path': self.file_path}
         )
-        response.raise_for_status()
-        data = response.json()
-        public_url = data.get('public_url')
-        if not public_url:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail='Ссылка не была получена со стороны Яндекс Диска.',
+        if not (public_url := response.json().get('public_url')):
+            raise ValueError(
+                'Ссылка не была получена со стороны Яндекс Диска.'
             )
         return public_url
 
@@ -107,5 +111,21 @@ async def get_yandex_client():
             detail='Яндекс Диск не настроен. Пожалуйста, '
             'добавьте YANDEX_DISK_TOKEN в .env-файл',
         )
-    async with YandexDiskClient(settings.yandex_disk_token) as client:
-        yield client
+    try:
+        async with YandexDiskClient(settings.yandex_disk_token) as client:
+            yield client
+    except StorageAPIError as e:
+        if e.status_code == status.HTTP_401_UNAUTHORIZED:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail='Предоставлен невалидный токен Яндекс Диска.',
+            )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f'Ошибка Яндекс Диска: {str(e)}',
+        )
+    except StorageError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        )

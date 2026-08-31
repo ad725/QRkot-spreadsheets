@@ -1,10 +1,9 @@
-from abc import ABC, abstractmethod
+from typing import Protocol
 
 from app.models.charity_project import CharityProject
 
 
-class BaseReportGenerator(ABC):
-    @abstractmethod
+class BaseReportGenerator(Protocol):
     async def generate_report(
         self, projects: list[CharityProject]
     ) -> tuple[bytes, str]:

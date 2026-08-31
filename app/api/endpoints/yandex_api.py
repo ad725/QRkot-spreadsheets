@@ -17,8 +17,7 @@ async def create_report(
     session: AsyncSession = Depends(get_async_session),
     report_service: ReportService = Depends(get_report_service),
 ):
-    """
-    Создает Excel-отчёт о закрытых проектах и загружает его на Яндекс Диск.
+    """Создает Excel-отчёт о закрытых проектах и загружает его на Яндекс Диск.
 
     Возвращает публичную ссылку на файл.
     Доступно только суперпользователям.

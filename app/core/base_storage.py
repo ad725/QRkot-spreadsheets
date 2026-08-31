@@ -2,5 +2,11 @@ from typing import Protocol
 
 
 class BaseStorageClient(Protocol):
-    async def upload_and_publish(self, content: bytes, filename: str) -> str:
-        """Загружает файл и возвращает публичную ссылку."""
+    async def create_excel_file(self, title: str) -> str:
+        """Создаёт файл в хранилище и возвращает ссылку для загрузки."""
+
+    async def upload_file(self, upload_url: str, content: bytes) -> None:
+        """Загружает содержимое файла по полученной ссылке."""
+
+    async def publish_file(self) -> str:
+        """Делает файл публичным и возвращает ссылку."""
