@@ -74,7 +74,7 @@ class YandexDiskClient(BaseStorageClient):
             params={'path': self.file_path, 'overwrite': 'true'},
         )
         if not (upload_url := response.json().get('href')):
-            raise ValueError(
+            raise StorageError(
                 'Не удалось получить ссылку для загрузки из ответа API.'
             )
         return upload_url
@@ -97,7 +97,7 @@ class YandexDiskClient(BaseStorageClient):
             'GET', RESOURCES_URL_YANDEX_DISK, params={'path': self.file_path}
         )
         if not (public_url := response.json().get('public_url')):
-            raise ValueError(
+            raise StorageError(
                 'Ссылка не была получена со стороны Яндекс Диска.'
             )
         return public_url
@@ -114,18 +114,15 @@ async def get_yandex_client():
     try:
         async with YandexDiskClient(settings.yandex_disk_token) as client:
             yield client
-    except StorageAPIError as e:
-        if e.status_code == status.HTTP_401_UNAUTHORIZED:
+    except StorageError as e:
+        if isinstance(e, StorageAPIError) and (
+            e.status_code == status.HTTP_401_UNAUTHORIZED
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail='Предоставлен невалидный токен Яндекс Диска.',
             )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f'Ошибка Яндекс Диска: {str(e)}',
-        )
-    except StorageError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(e),
+            detail=f'Ошибка Яндекс Диска: {e}',
         )
